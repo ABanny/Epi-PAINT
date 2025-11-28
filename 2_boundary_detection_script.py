@@ -1,5 +1,10 @@
 # Note: Run this on the picasso kernel only.
 
+# This script allows manual boundary detection and removal of localizations.
+# It creates a density map, applies thresholding, and provides an interactive
+# interface to select and deselect regions. The cleaned localizations are saved
+# to a new file with a '_boundary' suffix.
+
 import numpy as np
 from scipy.ndimage import gaussian_filter
 import matplotlib.pyplot as plt
@@ -19,9 +24,7 @@ def save_locs_withSuffix(path, locs, info, suffix=''):
         locs_file.create_dataset("locs", data=locs)
     _io.save_info(output_info_path, info, default_flow_style=False)
 
-
-#Define folder
-folder = '' # Insert the path to the Cell Folder. 
+folder = '/Users/abhinav/Desktop/Analysis_Revision/Mock/20250813/cell1' # <<< Set your folder path here
 file_extn = '.hdf5'
 file_names = [f for f in _os.listdir(folder) if f.endswith(file_extn)]
 for file in file_names:

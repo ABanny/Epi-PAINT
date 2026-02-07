@@ -14,17 +14,29 @@ from picasso import io as _io
 import os as _os
 import os.path as _ospath
 import h5py as _h5py
+import pandas as _pd
 
 def save_locs_withSuffix(path, locs, info, suffix=''):
+
+    # ensure DataFrame (required by ensure_sanity)
+    if not isinstance(locs, _pd.DataFrame):
+        locs = _pd.DataFrame.from_records(locs)
+
     locs = _lib.ensure_sanity(locs, info)
+
+    # convert back to structured array for saving
+    locs_np = locs.to_records(index=False)
+
     base, ext_locs = _ospath.splitext(path)
     output_locs_path = base + '_' + suffix + ext_locs    
     output_info_path = base + '_' + suffix + '.yaml'
+
     with _h5py.File(output_locs_path, "w") as locs_file:
-        locs_file.create_dataset("locs", data=locs)
+        locs_file.create_dataset("locs", data=locs_np)
+
     _io.save_info(output_info_path, info, default_flow_style=False)
 
-folder = '/Users/abhinav/Desktop/Analysis_Revision/Mock/20250813/cell1' # <<< Set your folder path here
+folder = '' # <<< Set your folder path here
 file_extn = '.hdf5'
 file_names = [f for f in _os.listdir(folder) if f.endswith(file_extn)]
 for file in file_names:

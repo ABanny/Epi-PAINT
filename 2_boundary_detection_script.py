@@ -9,36 +9,23 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-from picasso import lib as _lib
+from matplotlib.widgets import Button, PolygonSelector
+from matplotlib.path import Path
 from picasso import io as _io
 import os as _os
 import os.path as _ospath
-import h5py as _h5py
-import pandas as _pd
-
-def save_locs_withSuffix(path, locs, info, suffix=''):
-
-    # ensure DataFrame (required by ensure_sanity)
-    if not isinstance(locs, _pd.DataFrame):
-        locs = _pd.DataFrame.from_records(locs)
-
-    locs = _lib.ensure_sanity(locs, info)
-
-    # convert back to structured array for saving
-    locs_np = locs.to_records(index=False)
-
-    base, ext_locs = _ospath.splitext(path)
-    output_locs_path = base + '_' + suffix + ext_locs    
-    output_info_path = base + '_' + suffix + '.yaml'
-
-    with _h5py.File(output_locs_path, "w") as locs_file:
-        locs_file.create_dataset("locs", data=locs_np)
-
-    _io.save_info(output_info_path, info, default_flow_style=False)
+import epi_paint_picasso_utilis as eppu
+import sys
 
 folder = '' # <<< Set your folder path here
+folder = _ospath.join(folder, 'Cleaned')
 file_extn = '.hdf5'
 file_names = [f for f in _os.listdir(folder) if f.endswith(file_extn)]
+boundary_files = [f for f in file_names if 'boundary' in f]
+if boundary_files:
+    eppu.show_boundary_error(boundary_files)
+    sys.exit()
+
 for file in file_names:
     if 'Lamin' in file:
         fpath = _ospath.join(folder, file)
@@ -73,50 +60,180 @@ binary_mask = H_smooth > threshold
 class MaskEditor:
     def __init__(self, binary_mask):
         self.binary_mask = binary_mask
-        self.fig, self.ax = plt.subplots()
-        self.im = self.ax.imshow(binary_mask, origin='lower', cmap='gray')
-        self.rect = None
-        self.start = None
+        self.history = []
+
+        self.fig = plt.figure(figsize=(10, 6))
+        gs = self.fig.add_gridspec(
+            1, 2,
+            width_ratios=[4, 1],
+            wspace=0.05
+        )
+
+        self.ax = self.fig.add_subplot(gs[0])
+        self.ax_info = self.fig.add_subplot(gs[1])
+        self.ax_info.axis('off')
+
+        plt.subplots_adjust(bottom=0.2)
+        self.im = self.ax.imshow(binary_mask, origin='lower', cmap='gray_r')
+
+        instructions = (
+        "Polygon:\n"
+        "  • Click to add points.\n"
+        "  • Connect back to starting vertex.\n\n"
+        "Rectangle:\n"
+        "  • Shift + drag to draw rectangles.\n\n"
+        "Undo:\n"
+        "  • If you made a mistake, UNDO it.\n\n"
+        "Finish:\n"
+        "  • Use the DONE button to finish.\n\n"
+        )
+
+        self.ax_info.text(
+        0.0, 1.0, instructions,
+        va='top', fontsize=8
+        )
+
+        # ---------- Buttons ----------
+        ax_done = plt.axes([0.8, 0.05, 0.15, 0.07])
+        ax_undo = plt.axes([0.6, 0.05, 0.15, 0.07])
+
+        self.btn_done = Button(ax_done, 'Done')
+        self.btn_undo = Button(ax_undo, 'Undo')
+
+        self.btn_done.on_clicked(self.on_done)
+        self.btn_undo.on_clicked(self.undo)
+
+        # ---------- Polygon selector (default) ----------
+        self.poly = PolygonSelector(
+        self.ax,
+        self.on_polygon_complete,
+        useblit=True
+        )
+
+        # ---------- Rectangle state ----------
+        self.rect_start = None
+        self.rect_patch = None
+
+        # ---------- Events ----------
         self.fig.canvas.mpl_connect('button_press_event', self.on_press)
         self.fig.canvas.mpl_connect('button_release_event', self.on_release)
         self.fig.canvas.mpl_connect('motion_notify_event', self.on_motion)
-        plt.xlim(-25, int(round(xrange))+25)
-        plt.ylim(-25, int(round(yrange))+25)
+        self.fig.canvas.mpl_connect('key_press_event', self.on_key)
+        self.fig.canvas.mpl_connect('close_event', self.on_close)
+
+        self.finished = False
+
+        plt.xlim(-25, int(round(xrange)) + 25)
+        plt.ylim(-25, int(round(yrange)) + 25)
         plt.show()
 
+    # ================= RECTANGLE (Shift + Drag) =================
+
     def on_press(self, event):
-        if event.inaxes != self.ax:
+        if event.inaxes != self.ax or not event.key == 'shift':
             return
-        self.start = (int(event.xdata), int(event.ydata))
-        self.rect = Rectangle(self.start, 0, 0, linewidth=1, edgecolor='red', facecolor='none')
-        self.ax.add_patch(self.rect)
+
+        self.rect_start = (int(event.xdata), int(event.ydata))
+        self.rect_patch = Rectangle(
+            self.rect_start, 0, 0,
+            linewidth=1, edgecolor='red', facecolor='none'
+        )
+        self.ax.add_patch(self.rect_patch)
+
+        # Disable polygon temporarily
+        self.poly.set_active(False)
 
     def on_motion(self, event):
-        if self.start is None or event.inaxes != self.ax:
+        if self.rect_start is None or event.inaxes != self.ax:
             return
-        width = int(event.xdata) - self.start[0]
-        height = int(event.ydata) - self.start[1]
-        self.rect.set_width(width)
-        self.rect.set_height(height)
-        self.fig.canvas.draw()
+
+        width = int(event.xdata) - self.rect_start[0]
+        height = int(event.ydata) - self.rect_start[1]
+        self.rect_patch.set_width(width)
+        self.rect_patch.set_height(height)
+        self.fig.canvas.draw_idle()
 
     def on_release(self, event):
-        if self.start is None or event.inaxes != self.ax:
+        if self.rect_start is None or event.inaxes != self.ax:
             return
-        x0, y0 = self.start
+
+        self.history.append(self.binary_mask.copy())
+
+        x0, y0 = self.rect_start
         x1, y1 = int(event.xdata), int(event.ydata)
         x_min, x_max = sorted((x0, x1))
         y_min, y_max = sorted((y0, y1))
-        self.binary_mask[y_min:y_max, x_min:x_max] = False  # Deselect pixels
+
+        self.binary_mask[y_min:y_max, x_min:x_max] = False
         self.im.set_data(self.binary_mask)
-        self.start = None
-        self.rect = None
-        self.fig.canvas.draw()
+
+        # Cleanup
+        self.rect_start = None
+        self.rect_patch.remove()
+        self.rect_patch = None
+
+        # Re-enable polygon
+        self.poly.set_active(True)
+        self.fig.canvas.draw_idle()
+
+    # ================= POLYGON =================
+
+    def on_polygon_complete(self, verts):
+        if len(verts) < 3:
+            return
+
+        # Save history for undo
+        self.history.append(self.binary_mask.copy())
+
+        ny, nx = self.binary_mask.shape
+        X, Y = np.meshgrid(np.arange(nx), np.arange(ny))
+        points = np.vstack((X.ravel(), Y.ravel())).T
+
+        path = Path(verts)
+        mask = path.contains_points(points).reshape(ny, nx)
+
+        # Remove selected region
+        self.binary_mask[mask] = False
+        self.im.set_data(self.binary_mask)
+        self.fig.canvas.draw_idle()
+
+        # 🔥 IMPORTANT PART 🔥
+        # Reset selector so another polygon can be drawn
+        self.poly.clear()
+        self.poly.set_active(True)
+
+    # ================= UNDO / DONE =================
+
+    def undo(self, event):
+        if not self.history:
+            print("Nothing to undo")
+            return
+        self.binary_mask[:] = self.history.pop()
+        self.im.set_data(self.binary_mask)
+        self.fig.canvas.draw_idle()
+        print("Undo")
+
+    def on_key(self, event):
+        if event.key == 'enter':
+            self.on_done(None)
+
+    def on_done(self, event):
+        print("Selection finished.")
+        self.finished = True
+        plt.close(self.fig)
+
+    def on_close(self, event):
+        if not self.finished:
+            print("Window closed without clicking Done. Changes discarded.")
 
 # Run the Editor
 editor = MaskEditor(binary_mask.T)
 
 # Save the modified mask
+if not editor.finished:
+    eppu.show_boundary_not_saved_error()
+    sys.exit()
+
 cleaned_mask = editor.binary_mask
 
 # Map coordinates to mask grid
@@ -132,5 +249,5 @@ mask_indices = cleaned_mask[y_indices, x_indices]
 retained_locs = locs[mask_indices]
 
 # Save retained localizations to a new file
-save_locs_withSuffix(fpath, retained_locs, info, suffix='boundary')
+eppu.save_locs_withSuffix(fpath, retained_locs, info, suffix='boundary')
 print('Saved the boundary cleaned file')

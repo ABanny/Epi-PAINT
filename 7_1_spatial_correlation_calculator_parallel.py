@@ -18,10 +18,11 @@ from tqdm.contrib.concurrent import process_map
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import time
 from numba import njit
+import epi_paint_picasso_utilis as eppu
 
 # Define the folder location and the file extension inside the folder.
 
-folder = '/Users/abhinav/Library/CloudStorage/OneDrive-IndianInstituteofScience/AnalysisFolder/Epi/20251112/Mock/120825/cell2'  # <<< Set your folder path here
+folder = ''  # <<< Set your folder path here
 min_radius = 100
 step_size = 100
 max_radius = 1000
@@ -53,35 +54,6 @@ list_of_proteins = sorted(list_of_proteins, key = order.index)
 # Define radii for analysis in nanometers
 radii = _np.arange(min_radius, max_radius + step_size, step_size)
 # print(f'For every point, there will be {len(radii)} radii calculated!')
-
-def load_locs(path, qt_parent=None):
-    with _h5py.File(path, "r") as locs_file:
-        locs = locs_file["locs"][...]
-    locs = _np.rec.array(
-        locs, dtype=locs.dtype
-    )  # Convert to rec array with fields as attributes
-    info = load_info(path, qt_parent=qt_parent)
-    return locs, info
-
-class NoMetadataFileError(FileNotFoundError):
-    pass
-
-def load_info(path, qt_parent=None):
-    path_base, path_extension = _ospath.splitext(path)
-    filename = path_base + ".yaml"
-    try:
-        with open(filename, "r") as info_file:
-            info = list(_yaml.load_all(info_file, Loader=_yaml.UnsafeLoader))
-    except FileNotFoundError as e:
-        print("\nAn error occured. Could not find metadata file:\n{}".format(filename))
-        if qt_parent is not None:
-            _QMessageBox.critical(
-                qt_parent,
-                "An error occured",
-                "Could not find metadata file:\n{}".format(filename),
-            )
-        raise NoMetadataFileError(e)
-    return info
 
 # def gradient_density(tree, spot, radii):
 #     # distances, _ = tree.query(spot, k=len(tree.data), distance_upper_bound=max_radius)
@@ -237,8 +209,8 @@ def compare_proteins(pair_args):
     protein_2 = file_2.split('_')[0]
     print(f'Processing pair: {protein_1} and {protein_2} with PID {_os.getpid()}')
     # print(f'Comparing {protein_1} and {protein_2}. ({counter}/{int(len(file_names)*(len(file_names)-1))/2:.0f})')
-    locs_1, info_1 = load_locs(_ospath.join(folder, file_1))
-    locs_2, info_2 = load_locs(_ospath.join(folder, file_2))
+    locs_1, info_1 = eppu.load_locs(_ospath.join(folder, file_1))
+    locs_2, info_2 = eppu.load_locs(_ospath.join(folder, file_2))
     data_1 = _np.column_stack((locs_1.x, locs_1.y))
     data_1 = data_1 * pixel_size
     data_2 = _np.column_stack((locs_2.x, locs_2.y))

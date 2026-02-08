@@ -8,7 +8,7 @@ import pandas as _pd
 import os as _os
 from matplotlib.ticker import ScalarFormatter
 
-folder = '/Users/abhinav/Library/CloudStorage/OneDrive-IndianInstituteofScience/AnalysisFolder/Epi/20251112/Mock/280825/cell5'  # <<< Set your folder path here
+folder = ''  # <<< Set your folder path here
 folder = _os.path.join(folder, 'Analysis', 'PCCF')
 file_extn = '.csv'
 file_names = [f for f in _os.listdir(folder) if f.endswith(file_extn)]

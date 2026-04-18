@@ -82,13 +82,17 @@ for ax, target in zip(axes.flat, targets):
 
     relevant_cols = [p for p in pairs if target in p]
 
+    completed_targets = set()
     for col in relevant_cols:
 
         t1, t2 = col.split("_vs_")
         other = t2 if t1 == target else t1
         if 'ActD' in folder:
             if target == 'H3K4me3' or target == 'H3K27ac' or other == 'H3K4me3' or other == 'H3K27ac':
-                continue        
+                continue
+        if other in completed_targets:
+            continue
+        completed_targets.add(other)        
         color = to_hex(cmap_proteins_white[other](1.0))
 
         # Line (Mean)

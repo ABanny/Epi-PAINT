@@ -53,7 +53,7 @@ def load_and_average_pccf(parent_folder, file_name="pccf_results.csv"):
     return pccf_mean, pccf_sem, len(files_list)
 
 
-folder = '/Users/mickyanand/Library/CloudStorage/OneDrive-IndianInstituteofScience/ActD/DoC_NB_Rev/ActD5H/PCCF' # <<< Set your folder path here
+folder = '' # <<< Set your folder path here
 
 # Load PCCF averaged data (Mean + SEM)
 pccf_mean, pccf_sem, num_reps = load_and_average_pccf(folder)

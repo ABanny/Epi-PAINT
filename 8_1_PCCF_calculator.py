@@ -50,6 +50,7 @@ for file in file_names:
 # Order the list of proteins
 order = ['S2P', 'S5P', 'SC35', 'H3K4me3', 'H3K27ac', 'CTCF', 'H3K27me3', 'H3K9me3', 'LaminB1']
 list_of_proteins = sorted(list_of_proteins, key = order.index)
+file_names = sorted(file_names, key = lambda x: order.index(x.split('_')[0]))
 
 def compute_pccf(points_A, points_B, r_max, dr, roi = None):
     points_A = _np.asarray(points_A)

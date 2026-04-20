@@ -15,6 +15,7 @@ import itertools
 import time
 from tqdm import tqdm
 import epi_paint_picasso_utilis as eppu
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Define the folder location and the file extension inside the folder.
 folder = ''  # <<< Set your folder path here
@@ -65,7 +66,7 @@ def compute_pccf(points_A, points_B, r_max, dr, roi = None):
     counts = _np.zeros_like(r)
 
     # Count actual pairs within each shell
-    for p in tqdm(points_A, desc="Counting for points: "):
+    for p in points_A:
         idxs = tree_B.query_ball_point(p, r_max)
         if len(idxs) == 0:
             continue
@@ -86,56 +87,63 @@ def compute_pccf(points_A, points_B, r_max, dr, roi = None):
     g_AB = counts / norm
     return r, g_AB
 
-def compare_proteins(pair_args):
-    (i, file_1), (j, file_2) = pair_args
+def compare_proteins_parallel(args):
+    pair, data_1, data_2, r_max, dr, polygon_coords = args
+    (i, file_1), (j, file_2) = pair
     protein_1 = file_1.split('_')[0]
     protein_2 = file_2.split('_')[0]
-    locs_1, info_1 = eppu.load_locs(_ospath.join(folder, file_1))
-    locs_2, info_2 = eppu.load_locs(_ospath.join(folder, file_2))
-    data_1 = _np.column_stack((locs_1.x, locs_1.y))
-    data_1 = data_1 * pixel_size
-    data_2 = _np.column_stack((locs_2.x, locs_2.y))
-    data_2 = data_2 * pixel_size
+    
+    print(f'Processing pair: {protein_1} and {protein_2} with PID {_os.getpid()}')
+    
+    polygon = Polygon(polygon_coords)
     _, g_AB = compute_pccf(data_1, data_2, r_max=r_max, dr=dr, roi=polygon)
     _, g_BA = compute_pccf(data_2, data_1, r_max=r_max, dr=dr, roi=polygon)
-    g_cross = 0.5 * (g_AB + g_BA)
-    return g_cross
+    
+    print(f'Finished pair: {protein_1} and {protein_2} with PID {_os.getpid()}')
+    
+    return i, j, 0.5 * (g_AB + g_BA)
 
 
 if __name__ == '__main__':
-    _os.system('clear')
     start = time.time()
-    pccf = {}
+    _os.system('clear')
+    print('Loading all localiztions...')
+    all_data = {}
+    for file in tqdm(file_names):
+        locs, _ = eppu.load_locs(_ospath.join(folder, file))
+        data = _np.column_stack((locs.x, locs.y)) * pixel_size
+        all_data[file] = data
+    print('All localizations loaded.')
     pairs = list(itertools.combinations(enumerate(file_names), 2))
-    # print(f'Total pairs to process: {len(pairs)}')
-    pair_count = 1 
-    for pair in pairs:
-        print(f'Processing pair {pair_count}/{len(pairs)}: {pair[0][1].split("_")[0]} and {pair[1][1].split("_")[0]}')
-        g_cross = compare_proteins(pair)
-        pccf[pair] = g_cross
-        print(f'Completed pair: {pair[0][1].split("_")[0]} and {pair[1][1].split("_")[0]}')
-        pair_count += 1
-        _os.system('clear')
+    polygon_coords = list(polygon.exterior.coords)
+    total_pairs = len(pairs)
+    
+    print(f'Total pairs to process PCCFs: {total_pairs}')
+    
+    task_args = [(pair, all_data[pair[0][1]], all_data[pair[1][1]], r_max, dr, polygon_coords) for pair in pairs]
+
+    pccf = {}
+    completed = 0
+    with ProcessPoolExecutor() as executor:
+        futures = {executor.submit(compare_proteins_parallel, arg): pair
+                   for arg, pair in zip(task_args, pairs)}
+        for future in as_completed(futures):
+            pair = futures[future]
+            try:
+                i, j, g_cross = future.result()
+                pccf[pair] = g_cross
+                completed += 1
+                print(f'Completed {completed}/{total_pairs}: {pair[0][1].split("_")[0]} vs {pair[1][1].split("_")[0]}')
+            except Exception as e:
+                print(f'Failed: {pair[0][1].split("_")[0]} vs {pair[1][1].split("_")[0]}: {e}')
+
     headers = ['r'] + [f'{pair[0][1].split("_")[0]}_vs_{pair[1][1].split("_")[0]}' for pair in pairs]
     edges = _np.arange(0, r_max + dr, dr)
     r = 0.5 * (edges[:-1] + edges[1:])
-    # Stack results into one array
-    out = [r]
-    for pair in pairs:
-        out.append(pccf[pair])
-    out = _np.column_stack(out)
+    out = _np.column_stack([r] + [pccf[pair] for pair in pairs])
 
-    # Save the results
-    output_file = _ospath.join(output_parent_folder, 'pccf_results.csv')
+    output_file = _ospath.join(output_parent_folder, 'pccf_results_parallel.csv')
     _np.savetxt(output_file, out, delimiter=',', header=','.join(headers), comments='')
 
-    # with ProcessPoolExecutor() as executor:
-    #     futures = [executor.submit(compare_proteins, pair) for pair in pairs]
-    #     for f in as_completed(futures):
-    #         try:
-    #             result = f.result()  # will raise if worker errored
-    #         except Exception as e:
-    #             print("Worker failed:", e)
-
     end = time.time()
-    print(f'Total time taken: {end - start:.2f} seconds')
+    print(f'Total time taken to calculate PCCFs: {end - start:.2f} seconds')

@@ -9,6 +9,8 @@ import numpy as _np
 import os as _os
 from matplotlib.ticker import ScalarFormatter
 
+folder = '' # <<< Set your folder path here
+
 def load_and_average_pccf(parent_folder, file_name="pccf_results.csv"):
     files_list = []
     for root, dirs, files in _os.walk(parent_folder):
@@ -52,11 +54,14 @@ def load_and_average_pccf(parent_folder, file_name="pccf_results.csv"):
 
     return pccf_mean, pccf_sem, len(files_list)
 
-
-folder = '' # <<< Set your folder path here
+parallel_boolean = input("Did you run the parallel version of the PCCF calculator? (y/n): ").strip().lower()
 
 # Load PCCF averaged data (Mean + SEM)
-pccf_mean, pccf_sem, num_reps = load_and_average_pccf(folder)
+if parallel_boolean == 'y':
+    file_name = "pccf_results_parallel.csv"
+else:    
+    file_name = "pccf_results.csv"
+pccf_mean, pccf_sem, num_reps = load_and_average_pccf(folder, file_name=file_name)
 print(pccf_sem.describe())
 
 # Colormaps
